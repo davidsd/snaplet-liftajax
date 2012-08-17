@@ -1,0 +1,57 @@
+name:           snaplet-liftajax
+version:        0.0.1
+synopsis:       Ajax snaplet for the Snap Framework
+description:    An ajax snaplet for the Snap Framework, based on Scala's Lift.
+license:        BSD3
+license-file:   LICENSE
+author:         David Simmons-Duffin
+maintainer:     davidsd@gmail.com
+build-type:     Simple
+cabal-version:  >= 1.6
+homepage:       http://davidsd.org/
+category:       Web
+
+extra-source-files:  LICENSE
+
+source-repository head
+  type:     git
+  location: https://github.com/norm2782/snaplet-hdbc.git
+
+Library
+  hs-source-dirs: src
+
+  exposed-modules:
+    Snap.Snaplet.LiftAjax
+    Snap.Snaplet.LiftAjax.Splice
+    Snap.Snaplet.LiftAjax.Js
+
+  build-depends:
+    base                       >= 4       && < 5,
+    blaze-builder              >= 0.3,
+    bytestring                 >= 0.9.1   && < 0.10,
+    clientsession              >= 0.7.3.6 && < 0.8,
+    containers                 >= 0.3     && < 0.6,
+    convertible                >= 1.0     && < 1.1,
+    data-lens                  >= 2.0.1   && < 2.11,
+    data-lens-template         >= 2.1     && < 2.2,
+    digestive-functors         >= 0.5,
+    digestive-functors-snap    >= 0.5,
+    HDBC                       >= 2.2     && < 2.4,
+    heist                      >= 0.8     && < 0.9,
+    jmacro                     >= 0.5,
+    MonadCatchIO-transformers  >= 0.2.1   && < 0.4,
+    mtl                        >= 2.0     && < 2.2,
+    pretty                     >= 1.1.1,
+    prettyclass                >= 1.0,
+    resource-pool-catchio      >= 0.2     && < 0.3,
+    snap                       >= 0.9     && < 0.10,
+    snap-core                  == 0.9.*,
+    stm                        >= 2.3,
+    text                       >= 0.11    && < 0.12,
+    time                       >= 1.1     && < 1.5,
+    transformers               >= 0.2     && < 0.4,
+    unordered-containers       >= 0.1.4   && < 0.3,
+    xmlhtml                    >= 0.1
+
+  ghc-options: -Wall -fwarn-tabs -funbox-strict-fields
+               -fno-warn-orphans -fno-warn-unused-do-bind
