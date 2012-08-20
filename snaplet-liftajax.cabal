@@ -23,6 +23,8 @@ Library
   exposed-modules:
     Snap.Snaplet.LiftAjax
     Snap.Snaplet.LiftAjax.Splice
+    Snap.Snaplet.LiftAjax.State
+    Snap.Snaplet.LiftAjax.Callback
     Snap.Snaplet.LiftAjax.Js
 
   build-depends:

@@ -9,6 +9,7 @@ module Snap.Snaplet.LiftAjax
     , HasAjax
     , ajaxLens
     , ajaxForm
+    , ajaxFormWithSplices
     ) where
 
 ------------------------------------------------------------------------------
@@ -17,7 +18,6 @@ import           Control.Concurrent.STM
 import           Control.Monad.State
 import           Data.ByteString                (ByteString)
 import qualified Data.ByteString.Char8          as B
-import           Data.Lens.Lazy
 import qualified Data.Map                       as Map
 import           Data.Monoid
 import           Data.Text                      (Text)
@@ -28,23 +28,11 @@ import           Snap.Snaplet
 import           Snap.Snaplet.Heist
 import           Snap.Snaplet.LiftAjax.Callback
 import qualified Snap.Snaplet.LiftAjax.Js       as Js
-import qualified Snap.Snaplet.LiftAjax.Splice   as Splice
+import           Snap.Snaplet.LiftAjax.Splice
 import           Snap.Snaplet.LiftAjax.State
 import           Snap.Snaplet.Session.Common
-import           Text.Digestive
-import           Text.Templating.Heist
 import qualified Text.XmlHtml                   as X
 ------------------------------------------------------------------------------
-
-class HasAjax b where
-    ajaxLens :: Lens b (Snaplet (Ajax b))
-
-ajaxForm :: HasAjax b =>
-            Text
-         -> Form v (Handler b b) a
-         -> (Either (View v) a -> Handler b b JStat)
-         -> Splice (Handler b b)
-ajaxForm = Splice.ajaxForm ajaxLens
 
 defaultAjaxState :: IO (Ajax b)
 defaultAjaxState = do

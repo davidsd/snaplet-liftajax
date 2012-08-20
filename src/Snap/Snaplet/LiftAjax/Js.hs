@@ -33,3 +33,6 @@ showAsText = T.pack . PP.renderStyle (PP.style { PP.mode = PP.OneLineMode }) . r
 
 noop :: JStat
 noop = [jmacro|$.noop();|];
+
+alert :: Text -> JStat
+alert msg = [jmacro|alert(`(msg)`);|];

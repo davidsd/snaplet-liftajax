@@ -2,12 +2,12 @@
 {-# LANGUAGE QuasiQuotes       #-}
 
 module Snap.Snaplet.LiftAjax.Splice
-    ( ajaxForm ) where
+    ( ajaxForm
+    , ajaxFormWithSplices ) where
 
 ------------------------------------------------------------------------------
 import           Control.Monad.Trans
 import           Data.Function                  (on)
-import           Data.Lens.Lazy
 import           Data.List                      (unionBy)
 import           Data.Monoid
 import           Data.Text                      (Text)
@@ -38,13 +38,13 @@ handleForm name form process = do
   (view, result) <- runForm name form
   process (maybe (Left view) Right result) >>= Js.write
 
-formWithHandler :: Lens b (Snaplet (Ajax b))
-                -> Handler b b ()
+formWithHandler :: HasAjax b =>
+                   Handler b b ()
                 -> Splice (Handler b b)
-formWithHandler ajax h = do
+formWithHandler h = do
   X.Element _ attrs cs <- getParamNode
-  formId    <- lift $ withTop ajax newRandomId
-  handlerId <- lift $ withTop ajax $ addCallback h
+  formId    <- lift $ withTop ajaxLens newRandomId
+  handlerId <- lift $ withTop ajaxLens $ addCallback h
   children  <- runNodeList cs
   return $ formNodes formId handlerId attrs children
 
@@ -65,10 +65,23 @@ formNodes formId hid attrs children = [form]
                                                     'javascript');
                   return false; |]
 
-ajaxForm :: Lens b (Snaplet (Ajax b))
-         -> Text
+type FormHandler b v a = Either (View v) a -> Handler b b JStat
+
+ajaxForm :: HasAjax b =>
+            Text
          -> Form v (Handler b b) a
-         -> (Either (View v) a -> Handler b b JStat)
+         -> FormHandler b v a
          -> Splice (Handler b b)
-ajaxForm ajax n f p = formWithHandler ajax $ handleForm n f p
+ajaxForm n f p = formWithHandler $ handleForm n f p
+
+ajaxFormWithSplices :: HasAjax b =>
+                       (View v -> [(Text, Splice (Handler b b))])
+                    -> Form v (Handler b b) a
+                    -> FormHandler b v  a
+                    -> Splice (Handler b b)
+ajaxFormWithSplices splices form process = do
+  name <- lift $ with ajaxLens newRandomId
+  view <- lift $ getForm name form
+  localTS (bindSplices $ splices view) $ ajaxForm name form process
+
 

@@ -5,6 +5,7 @@ import           Control.Concurrent.STM
 import           Control.Monad.State
 import           Data.ByteString             (ByteString)
 import qualified Data.ByteString.Char8       as B
+import           Data.Lens.Lazy
 import           Data.Map                    (Map)
 import           Data.Maybe
 import           Data.Text                   (Text)
@@ -32,6 +33,9 @@ data Ajax b = Ajax { ajaxHeartbeats   :: TVar Heartbeats
                    }
 
 type AjaxHandler b = Handler b (Ajax b)
+
+class HasAjax b where
+    ajaxLens :: Lens b (Snaplet (Ajax b))
 
 ------------------------------------------------------------------------------
 
