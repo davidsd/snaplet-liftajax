@@ -66,7 +66,8 @@ y = <dfInputText ref="y" />
 Setup
 -----
 
-* Add the snaplet to your application's state, and define a `HasAjax` instance.
+* Add the snaplet to your application's state, and define a `HasAjax`
+  instance.
 ```haskell
 data App = App
     { _heist :: Snaplet (Heist App)
@@ -84,7 +85,8 @@ instance HasAjax App where
 type AppHandler = Handler App App
 ```
 
-* Call nestSnaplet appropriately in your application's initializer.
+* Call nestSnaplet appropriately in your application's
+  initializer.
 ```haskell
 app = makeSnaplet "app" "An snaplet example application." Nothing $ do
     h <- nestSnaplet "" heist $ heistInit "templates"
