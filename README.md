@@ -67,42 +67,39 @@ Setup
 -----
 
 * Add the snaplet to your application's state, and define a `HasAjax` instance.
+```haskell
+data App = App
+    { _heist :: Snaplet (Heist App)
+    , _ajax  :: Snaplet (Ajax App)
+    }
 
-        ```haskell
-        data App = App
-            { _heist :: Snaplet (Heist App)
-            , _ajax  :: Snaplet (Ajax App)
-            }
+makeLens ''App
 
-        makeLens ''App
+instance HasHeist App where
+    heistLens = subSnaplet heist
 
-        instance HasHeist App where
-            heistLens = subSnaplet heist
+instance HasAjax App where
+    ajaxLens = ajax
 
-        instance HasAjax App where
-            ajaxLens = ajax
-
-        type AppHandler = Handler App App
-        ```
+type AppHandler = Handler App App
+```
 
 * Call nestSnaplet appropriately in your application's initializer.
-
-        ```haskell
-        app = makeSnaplet "app" "An snaplet example application." Nothing $ do
-            h <- nestSnaplet "" heist $ heistInit "templates"
-            a <- nestSnaplet "ajax" ajax $ ajaxInit defaultAjaxState
-            addRoutes [("/", serveDirectory "static")]
-            addSplices [("addIntsForm", liftHeist addIntsSplice)]
-            return $ App h a
-        ```
+```haskell
+app = makeSnaplet "app" "An snaplet example application." Nothing $ do
+    h <- nestSnaplet "" heist $ heistInit "templates"
+    a <- nestSnaplet "ajax" ajax $ ajaxInit defaultAjaxState
+    addRoutes [("/", serveDirectory "static")]
+    addSplices [("addIntsForm", liftHeist addIntsSplice)]
+    return $ App h a
+```
 
 * Add jquery and liftAjax.js to your site's header (and place the
   files where they'll be served)
-
-        ```html
-        <script type="text/javascript" src="jquery-1.7.2.min.js"></script>
-        <script type="text/javascript" src="liftAjax.js"></script>
-        ```
+```html
+<script type="text/javascript" src="jquery-1.7.2.min.js"></script>
+<script type="text/javascript" src="liftAjax.js"></script>
+```
 
 * Add the `<ajaxFooter />` just before your site's body tag.
 
