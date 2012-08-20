@@ -66,8 +66,9 @@ y = <dfInputText ref="y" />
 Setup
 -----
 
-* Add the snaplet to your application's state, and define a `HasAjax`
-  instance.
+Add the snaplet to your application's state, and define a `HasAjax`
+instance:
+
 ```haskell
 data App = App
     { _heist :: Snaplet (Heist App)
@@ -85,8 +86,8 @@ instance HasAjax App where
 type AppHandler = Handler App App
 ```
 
-* Call nestSnaplet appropriately in your application's
-  initializer.
+Call nestSnaplet appropriately in your application's initializer:
+
 ```haskell
 app = makeSnaplet "app" "An snaplet example application." Nothing $ do
     h <- nestSnaplet "" heist $ heistInit "templates"
@@ -96,14 +97,15 @@ app = makeSnaplet "app" "An snaplet example application." Nothing $ do
     return $ App h a
 ```
 
-* Add jquery and liftAjax.js to your site's header (and place the
-  files where they'll be served)
+Add jquery and liftAjax.js to your site's header (and place the files
+where they'll be served):
+
 ```html
 <script type="text/javascript" src="jquery-1.7.2.min.js"></script>
 <script type="text/javascript" src="liftAjax.js"></script>
 ```
 
-* Add the `<ajaxFooter />` just before your site's body tag.
+Add the `<ajaxFooter />` just before your site's body tag.
 
 Notes
 -----
