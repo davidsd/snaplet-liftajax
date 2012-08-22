@@ -42,8 +42,11 @@ class HasAjax b where
 hidAsText :: HandlerId -> Text
 hidAsText (HandlerId h) = T.pack $ B.unpack h
 
-getRqParam :: ByteString -> AjaxHandler b (Maybe ByteString)
+getRqParam :: ByteString -> Handler b v (Maybe ByteString)
 getRqParam p = liftM (>>=listToMaybe) $ getsRequest $ rqParam p
+
+getTextRqParam :: Text -> Handler b v (Maybe ByteString)
+getTextRqParam = getRqParam . B.pack . T.unpack
 
 setPageId :: PageId -> AjaxHandler b ()
 setPageId pageId = modify $ \a -> a { ajaxPageId = pageId }

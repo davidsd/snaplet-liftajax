@@ -105,7 +105,7 @@ where they'll be served):
 <script type="text/javascript" src="liftAjax.js"></script>
 ```
 
-Add the `<ajaxFooter />` just before your site's body tag.
+Add the `<ajaxFooter />` just before your site's `</body>` tag.
 
 Notes
 -----

@@ -59,15 +59,15 @@ ajaxInit ajaxState = makeSnaplet "ajax" "" Nothing $ do
 
 routes :: HasHeist b => [(ByteString, AjaxHandler b ())]
 routes = [ ("/request/:pageId/", handleRequest)
-         , ("/gc",               failIfNotLocal handleGC)
-         , ("/state",            failIfNotLocal handleState)
+         , ("/gc",               ifLocal handleGC)
+         , ("/state",            ifLocal handleState)
          ]
     where
-      failIfNotLocal m = do
+      ifLocal m = do
         rip <- liftM rqRemoteAddr getRequest
-        if not $ elem rip [ "127.0.0.1" , "localhost" , "::1" ]
-          then pass
-          else m
+        if rip `elem` [ "127.0.0.1" , "localhost" , "::1" ]
+          then m
+          else pass
 
 splices :: [(Text, SnapletSplice b (Ajax b))]
 splices = [ ("ajaxFooter", footerSplice) ]

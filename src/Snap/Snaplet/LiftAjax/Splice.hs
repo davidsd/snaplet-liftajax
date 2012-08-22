@@ -2,17 +2,26 @@
 {-# LANGUAGE QuasiQuotes       #-}
 
 module Snap.Snaplet.LiftAjax.Splice
-    ( ajaxForm
-    , ajaxFormWithSplices ) where
+    ( ajaxFormWithHandler
+    , ajaxForm
+    , ajaxFormWithSplices
+    , ajaxButtonWithHandler
+    , ajaxButton
+    , ajaxButton_
+    , ajaxJsonButton
+    ) where
 
 ------------------------------------------------------------------------------
 import           Control.Monad.Trans
+import           Data.Aeson
 import           Data.Function                  (on)
 import           Data.List                      (unionBy)
 import           Data.Monoid
+import qualified Data.ByteString.Char8          as B
+import qualified Data.ByteString.Lazy           as LB
 import           Data.Text                      (Text)
 import           Language.Javascript.JMacro
-import           Snap.Core
+import           Safe
 import           Snap.Snaplet
 import           Snap.Snaplet.LiftAjax.Callback
 import qualified Snap.Snaplet.LiftAjax.Js       as Js
@@ -23,65 +32,109 @@ import           Text.Templating.Heist
 import qualified Text.XmlHtml                   as X
 ------------------------------------------------------------------------------
 
+type FormHandler b v a = Either (View v) a -> Handler b b JStat
+
 -- Does not override existing attributes
 addAttrs :: [(Text, Text)]  -- ^ Original attributes
          -> [(Text, Text)]  -- ^ Attributes to add
          -> [(Text, Text)]  -- ^ Resulting attributes
 addAttrs = unionBy (on (==) fst)
 
-handleForm :: MonadSnap m =>
-              Text
-           -> Form v m a
-           -> (Either (View v) a -> m JStat)
-           -> m ()
-handleForm name form process = do
-  (view, result) <- runForm name form
-  process (maybe (Left view) Right result) >>= Js.write
+lazyFromStrict :: B.ByteString -> LB.ByteString
+lazyFromStrict = LB.fromChunks . (:[])
 
-formWithHandler :: HasAjax b =>
-                   Handler b b ()
-                -> Splice (Handler b b)
-formWithHandler h = do
-  X.Element _ attrs cs <- getParamNode
-  formId    <- lift $ withTop ajaxLens newRandomId
-  handlerId <- lift $ withTop ajaxLens $ addCallback h
-  children  <- runNodeList cs
-  return $ formNodes formId handlerId attrs children
+ajaxCall :: JExpr -> JStat
+ajaxCall e = [jmacro| liftAjax.lift_ajaxHandler(`(e)`, null, null, 'javascript');
+                      return false; |]
 
-formNodes :: Text -> HandlerId -> [(Text, Text)] -> [X.Node] -> [X.Node]
-formNodes formId hid attrs children = [form]
+ajaxCallWithParams :: [(Text, JExpr)] -> JStat
+ajaxCallWithParams ps = ajaxCall $ collect $ map pair ps
     where
-      hidden = X.Element "input" [ ("type", "hidden")
-                                 , ("name", hidAsText hid)
-                                 , ("id",   hidAsText hid)
+      pair (a,b) = [jmacroE|`(a)`+"="+encodeURIComponent(`(b)`)|]
+      collect = foldl1Def Js.null (\x xs -> [jmacroE|`(x)`+"&"+`(xs)`|])
+
+liftAjax :: HasAjax b => AjaxHandler b a -> HeistT (Handler b b) a
+liftAjax = lift . withTop ajaxLens
+
+addAjaxCallback :: HasAjax b => Handler b b JStat -> HeistT (Handler b b) HandlerId
+addAjaxCallback = liftAjax . addCallback . (>>= Js.write)
+
+ajaxFormWithHandler :: HasAjax b =>
+                       Handler b b JStat
+                    -> Splice (Handler b b)
+ajaxFormWithHandler h = do
+  X.Element _ attrs cs <- getParamNode
+  formId    <- liftAjax newRandomId
+  handlerId <- addAjaxCallback h
+  children  <- runNodeList cs
+  let hidden = X.Element "input" [ ("type", "hidden")
+                                 , ("name", hidAsText handlerId)
+                                 , ("id",   hidAsText handlerId)
                                  ] []
       form = X.Element "form" (addAttrs [ ("action",   "javascript://")
                                         , ("onsubmit", Js.showAsText sendForm)
                                         , ("id",       formId)
                                         ] attrs) (children ++ [hidden])
-      sendForm = [jmacro| liftAjax.lift_ajaxHandler($(`("#"<>formId)`).serialize(),
-                                                     null,
-                                                     null,
-                                                    'javascript');
-                  return false; |]
-
-type FormHandler b v a = Either (View v) a -> Handler b b JStat
+      sendForm = ajaxCall [jmacroE|$(`("#"<>formId)`).serialize()|]
+  return [form]
 
 ajaxForm :: HasAjax b =>
             Text
          -> Form v (Handler b b) a
          -> FormHandler b v a
          -> Splice (Handler b b)
-ajaxForm n f p = formWithHandler $ handleForm n f p
+ajaxForm name form process =
+    ajaxFormWithHandler $ do
+      (view, result) <- runForm name form
+      process (maybe (Left view) Right result)
 
 ajaxFormWithSplices :: HasAjax b =>
                        (View v -> [(Text, Splice (Handler b b))])
                     -> Form v (Handler b b) a
-                    -> FormHandler b v  a
+                    -> FormHandler b v a
                     -> Splice (Handler b b)
 ajaxFormWithSplices splices form process = do
-  name <- lift $ with ajaxLens newRandomId
+  name <- liftAjax newRandomId
   view <- lift $ getForm name form
   localTS (bindSplices $ splices view) $ ajaxForm name form process
 
+ajaxButtonWithHandler :: HasAjax b =>
+                         [(Text, JExpr)]
+                      -> Handler b b JStat
+                      -> Splice (Handler b b)
+ajaxButtonWithHandler jsParams h = do
+  X.Element _ attrs cs <- getParamNode
+  handlerId <- addAjaxCallback h
+  children  <- runNodeList cs
+  let button = X.Element "button" (addAttrs [ ("onclick", Js.showAsText call)
+                                            ] attrs) children
+      call = ajaxCallWithParams $ [(hidAsText handlerId, Js.null)] ++ jsParams
+  return [button]
+
+ajaxButtonWithParser :: HasAjax b =>
+                        (B.ByteString -> Maybe a)
+                     -> JExpr
+                     -> (Maybe a -> Handler b b JStat)
+                     -> Splice (Handler b b)
+ajaxButtonWithParser parse jsExpr process = do
+  exprName <- liftAjax newRandomId
+  ajaxButtonWithHandler [(exprName, jsExpr)] $ do
+                                    expr <- getTextRqParam exprName
+                                    process $ expr >>= parse
+
+ajaxButton :: (HasAjax b, Read a) =>
+              JExpr
+           -> (Maybe a -> Handler b b JStat)
+           -> Splice (Handler b b)
+ajaxButton = ajaxButtonWithParser $ readMay . B.unpack
+
+ajaxJsonButton :: (HasAjax b, FromJSON a) =>
+                  JExpr
+               -> (Maybe a -> Handler b b JStat)
+               -> Splice (Handler b b)
+ajaxJsonButton jsonExpr = ajaxButtonWithParser (decode . lazyFromStrict)
+                          [jmacroE|JSON.stringify(`(jsonExpr)`)|]
+
+ajaxButton_ :: (HasAjax b) => Handler b b JStat -> Splice (Handler b b)
+ajaxButton_ press = ajaxButtonWithHandler [] press
 

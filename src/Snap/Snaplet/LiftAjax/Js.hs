@@ -32,7 +32,10 @@ showAsText :: (JsToDoc a, JMacro a) => a -> Text
 showAsText = T.pack . PP.renderStyle (PP.style { PP.mode = PP.OneLineMode }) . renderJs
 
 noop :: JStat
-noop = [jmacro|$.noop();|];
+noop = [jmacro|$.noop();|]
 
 alert :: Text -> JStat
-alert msg = [jmacro|alert(`(msg)`);|];
+alert msg = [jmacro|alert(`(msg)`);|]
+
+null :: JExpr
+null = [jmacroE|null|]
