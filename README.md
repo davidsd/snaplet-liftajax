@@ -23,11 +23,11 @@ First, some imports
 ```haskell
 import           Control.Applicative
 import           Data.Monoid
-import           Data.Text       (Text)
-import qualified Data.Text as T
+import           Data.Text                    (Text)
+import qualified Data.Text                    as T
 import           Language.Javascript.JMacro
-import           Snap.Snaplet.LiftAjax.Splice
-import qualified Snap.Snaplet.LiftAjax.Js as Js
+import qualified Snap.Snaplet.LiftAjax.Js     as Js
+import qualified Snap.Snaplet.LiftAjax.Splice as Ajax
 import           Text.Digestive
 import           Text.Digestive.Heist
 import           Text.Templating.Heist
@@ -46,7 +46,7 @@ To this form, associate a function `process` which takes the result
 (or an error) and returns javascript to be executed client-side.
 ```haskell
 addIntsSplice :: Splice AppHandler
-addIntsSplice = ajaxFormWithSplices digestiveSplices addInts process
+addIntsSplice = Ajax.formWithSplices digestiveSplices addInts process
     where
       process :: Either (View Text) Int -> AppHandler JStat
       process (Right z) = return $ Js.alert $ "the sum is " <> T.pack (show z)
