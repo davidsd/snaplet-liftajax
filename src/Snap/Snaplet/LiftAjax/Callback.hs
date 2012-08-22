@@ -1,5 +1,5 @@
-{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
 
 module Snap.Snaplet.LiftAjax.Callback
@@ -16,20 +16,20 @@ import           Control.Category
 import           Control.Concurrent
 import           Control.Concurrent.STM
 import           Control.Monad.State
-import           Data.ByteString             (ByteString)
-import qualified Data.ByteString.Char8       as B
-import qualified Data.Map                    as Map
+import           Data.ByteString                (ByteString)
+import qualified Data.ByteString.Char8          as B
+import qualified Data.Map                       as Map
 import           Data.Maybe
-import           Data.Text                   (Text)
-import qualified Data.Text                   as T
+import           Data.Text                      (Text)
+import qualified Data.Text                      as T
+import           Data.Time.Clock                (NominalDiffTime)
 import           Data.Time.Clock.POSIX
-import           Data.Time.Clock             (NominalDiffTime)
-import           Prelude                     hiding (id, (.))
+import           Prelude                        hiding (id, (.))
 import           Snap.Core
 import           Snap.Snaplet
 import           Snap.Snaplet.Heist
 import           Snap.Snaplet.LiftAjax.State
-import qualified Text.PrettyPrint            as PP
+import qualified Text.PrettyPrint               as PP
 import           Text.PrettyPrint.HughesPJClass
 ------------------------------------------------------------------------------
 
@@ -53,7 +53,7 @@ runCallback = do
   params <- getsRequest rqParams
   withTop' id $ fromMaybe pass $ do
     callbacks <- maybeCallbacks
-    listToMaybe $ catMaybes $ map (flip Map.lookup callbacks . HandlerId) (Map.keys params)
+    listToMaybe $ mapMaybe (flip Map.lookup callbacks . HandlerId) (Map.keys params)
 
 handleRequest :: AjaxHandler b ()
 handleRequest = do

@@ -2,14 +2,11 @@
 {-# LANGUAGE QuasiQuotes       #-}
 
 module Snap.Snaplet.LiftAjax
-    ( addCallback
-    , ajaxInit
+    ( ajaxInit
     , defaultAjaxState
     , Ajax
     , HasAjax
     , ajaxLens
-    , ajaxForm
-    , ajaxFormWithSplices
     ) where
 
 ------------------------------------------------------------------------------
@@ -21,14 +18,12 @@ import qualified Data.ByteString.Char8          as B
 import qualified Data.Map                       as Map
 import           Data.Monoid
 import           Data.Text                      (Text)
-import           Language.Javascript.JMacro     ()
 import           Language.Javascript.JMacro
 import           Snap.Core
 import           Snap.Snaplet
 import           Snap.Snaplet.Heist
 import           Snap.Snaplet.LiftAjax.Callback
 import qualified Snap.Snaplet.LiftAjax.Js       as Js
-import           Snap.Snaplet.LiftAjax.Splice
 import           Snap.Snaplet.LiftAjax.State
 import           Snap.Snaplet.Session.Common
 import qualified Text.XmlHtml                   as X

@@ -64,7 +64,7 @@ getAjaxTVar :: (Ajax b -> TVar a) -> AjaxHandler b a
 getAjaxTVar a = gets a >>= liftIO . readTVarIO
 
 modifyAjaxTVar :: (Ajax b -> TVar a) -> (a -> a) -> AjaxHandler b ()
-modifyAjaxTVar a f = gets a >>= liftIO . atomically . (flip modifyTVar f)
+modifyAjaxTVar a f = gets a >>= liftIO . atomically . flip modifyTVar f
 
 getCallbacks :: AjaxHandler b (SiteCallbacks b)
 getCallbacks = getAjaxTVar ajaxCallbacks

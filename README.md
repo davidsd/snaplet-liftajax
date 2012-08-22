@@ -26,7 +26,7 @@ import           Data.Monoid
 import           Data.Text       (Text)
 import qualified Data.Text as T
 import           Language.Javascript.JMacro
-import           Snap.Snaplet.LiftAjax
+import           Snap.Snaplet.LiftAjax.Splice
 import qualified Snap.Snaplet.LiftAjax.Js as Js
 import           Text.Digestive
 import           Text.Digestive.Heist
