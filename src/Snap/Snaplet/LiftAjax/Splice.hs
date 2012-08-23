@@ -1,19 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes       #-}
 
-module Snap.Snaplet.LiftAjax.Splice
-    ( formWithHandler
-    , form
-    , formWithSplices
-    , elemWithHandler
-    , elemWithParser
-    , button
-    , readButton
-    , jsonButton
-    , anchor
-    , readAnchor
-    , jsonAnchor
-    ) where
+module Snap.Snaplet.LiftAjax.Splice where
 
 ------------------------------------------------------------------------------
 import           Control.Applicative
@@ -27,6 +15,7 @@ import           Data.Monoid
 import           Data.Text                      (Text)
 import           Language.Javascript.JMacro
 import           Safe
+import           Snap.Core
 import           Snap.Snaplet
 import           Snap.Snaplet.LiftAjax.Callback
 import qualified Snap.Snaplet.LiftAjax.Js       as Js
@@ -37,11 +26,12 @@ import           Text.Templating.Heist
 import qualified Text.XmlHtml                   as X
 ------------------------------------------------------------------------------
 
-type FormHandler b v a = Either (View v) a -> Handler b b JStat
-type ButtonHandler b a = Maybe a -> Handler b b JStat
+type AjaxCallback b = Handler b b JStat
 
-type Attrs    = [(Text, Text)]
-type Children = [X.Node]
+type FormCallback b v a = Either (View v) a -> AjaxCallback b
+type ButtonCallback b a = Maybe a -> AjaxCallback b
+
+type Attrs = [(Text, Text)]
 
 -- Does not override existing attributes
 addAttrs :: Attrs  -- ^ Original attributes
@@ -49,34 +39,77 @@ addAttrs :: Attrs  -- ^ Original attributes
          -> Attrs  -- ^ Resulting attributes
 addAttrs = unionBy (on (==) fst)
 
+mapAttrs :: (Attrs -> Attrs) -> X.Node -> X.Node
+mapAttrs f (X.Element t a c) = X.Element t (f a) c
+mapAttrs _ n = n
+
 lazyFromStrict :: B.ByteString -> LB.ByteString
 lazyFromStrict = LB.fromChunks . pure
+
+liftAjax :: HasAjax b => AjaxHandler b a -> HeistT (Handler b b) a
+liftAjax = lift . withTop ajaxLens
+
+addAjaxCallback :: HasAjax b => AjaxCallback b -> AjaxHandler b HandlerId
+addAjaxCallback = addCallback . (>>= Js.write)
+
+------------------------------------------------------------------------------
+-- Ajax Calls
+------------------------------------------------------------------------------
 
 ajaxCall :: JExpr -> JStat
 ajaxCall e = [jmacro| liftAjax.lift_ajaxHandler(`(e)`, null, null, 'javascript');
                       return false; |]
 
-ajaxCallWithParams :: [(Text, JExpr)] -> JStat
-ajaxCallWithParams ps = ajaxCall $ collect $ map pair ps
+encodeParams :: [(Text, JExpr)] -> JExpr
+encodeParams = collect . map pair
     where
       pair (a,b) = [jmacroE|`(a)`+"="+encodeURIComponent(`(b)`)|]
       collect = foldl1Def Js.null (\x xs -> [jmacroE|`(x)`+"&"+`(xs)`|])
 
-liftAjax :: HasAjax b => AjaxHandler b a -> HeistT (Handler b b) a
-liftAjax = lift . withTop ajaxLens
+callHandlerWithParams :: HasAjax b =>
+                         [(Text, JExpr)]
+                      -> AjaxCallback b
+                      -> AjaxHandler b JStat
+callHandlerWithParams jsParams h = do
+  handlerId <- addAjaxCallback h
+  return $ ajaxCall $ encodeParams $ (hidAsText handlerId, Js.null) : jsParams
 
-addAjaxCallback :: HasAjax b => Handler b b JStat -> HeistT (Handler b b) HandlerId
-addAjaxCallback = liftAjax . addCallback . (>>= Js.write)
+callHandler :: HasAjax b => AjaxCallback b -> AjaxHandler b JStat
+callHandler = callHandlerWithParams []
+
+callWithParser :: HasAjax b =>
+                  (B.ByteString -> Maybe a)
+               -> JExpr
+               -> ButtonCallback b a
+               -> AjaxHandler b JStat
+callWithParser parse jsExpr process = do
+  exprName <- newRandomId
+  callHandlerWithParams [(exprName, jsExpr)] $ do
+                                        expr <- getTextRqParam exprName
+                                        process $ expr >>= parse
+
+callWithRead :: (HasAjax b, Read a) =>
+                JExpr
+             -> ButtonCallback b a
+             -> AjaxHandler b JStat
+callWithRead = callWithParser $ readMay . B.unpack
+
+callWithJson :: (HasAjax b, FromJSON a) =>
+                JExpr
+             -> ButtonCallback b a
+             -> AjaxHandler b JStat
+callWithJson jsonExpr = callWithParser (decode . lazyFromStrict)
+                        [jmacroE|JSON.stringify(`(jsonExpr)`)|]
 
 ------------------------------------------------------------------------------
 -- Forms
 ------------------------------------------------------------------------------
 
-formWithHandler :: HasAjax b => Handler b b JStat -> Splice (Handler b b)
-formWithHandler h = do
+formWithCallback :: HasAjax b => AjaxCallback b -> Splice (Handler b b)
+formWithCallback h = do
   X.Element _ attrs cs <- getParamNode
   formId    <- liftAjax newRandomId
-  handlerId <- addAjaxCallback h
+  handlerId <- liftAjax $ addAjaxCallback h
   children  <- runNodeList cs
   let hidden = X.Element "input" [ ("type", "hidden")
                                  , ("name", hidAsText handlerId)
@@ -92,16 +125,16 @@ formWithHandler h = do
 form :: HasAjax b =>
         Text
      -> Form v (Handler b b) a
-     -> FormHandler b v a
+     -> FormCallback b v a
      -> Splice (Handler b b)
-form name f process = formWithHandler $ do
+form name f process = formWithCallback $ do
                         (view, result) <- runForm name f
                         process (maybe (Left view) Right result)
 
 formWithSplices :: HasAjax b =>
                    (View v -> [(Text, Splice (Handler b b))])
                 -> Form v (Handler b b) a
-                -> FormHandler b v a
+                -> FormCallback b v a
                 -> Splice (Handler b b)
 formWithSplices splices f process = do
   name <- liftAjax newRandomId
@@ -112,76 +145,71 @@ formWithSplices splices f process = do
 -- Elements
 ------------------------------------------------------------------------------
 
-ajaxElem :: HasAjax b =>
-        [(Text, JExpr)]
-     -> Handler b b JStat
-     -> HeistT (Handler b b) (Attrs, Children)
-ajaxElem jsParams h = do
+onEvent :: Functor m => Text -> m JStat -> m Attrs
+onEvent e = fmap $ \js -> [(e, Js.showAsText js)]
+
+onClick :: Functor m => m JStat -> m Attrs
+onClick = onEvent "onclick"
+
+runElem :: Monad m => Text -> Attrs -> Splice m
+runElem tag attrs = do
   X.Element _ as cs <- getParamNode
-  handlerId <- addAjaxCallback h
-  children  <- runNodeList cs
-  let call = ajaxCallWithParams $ (hidAsText handlerId, Js.null) : jsParams
-  return (addAttrs [("onclick", Js.showAsText call)] as, children)
+  cs' <- runNodeList cs
+  return [X.Element tag (addAttrs attrs as) cs']
 
-elemWithHandler :: HasAjax b => Handler b b JStat -> HeistT (Handler b b) (Attrs, Children)
-elemWithHandler = ajaxElem []
-
-elemWithParser :: HasAjax b =>
-                  (B.ByteString -> Maybe a)
-               -> JExpr
-               -> ButtonHandler b a
-               -> HeistT (Handler b b) (Attrs, Children)
-elemWithParser parse jsExpr process = do
-  exprName <- liftAjax newRandomId
-  ajaxElem [(exprName, jsExpr)] $ do
-    expr <- getTextRqParam exprName
-    process $ expr >>= parse
-
-readElem :: (HasAjax b, Read a) =>
-            JExpr
-         -> ButtonHandler b a
-         -> HeistT (Handler b b) (Attrs, Children)
-readElem = elemWithParser $ readMay . B.unpack
-
-jsonElem :: (HasAjax b, FromJSON a) =>
-            JExpr
-         -> ButtonHandler b a
-         -> HeistT (Handler b b) (Attrs, Children)
-jsonElem jsonExpr = elemWithParser (decode . lazyFromStrict)
-                    [jmacroE|JSON.stringify(`(jsonExpr)`)|]
+withAction :: HasAjax b =>
+              AjaxHandler b Attrs
+           -> Splice (Handler b b)
+           -> Splice (Handler b b)
+withAction ajaxAttrs splice = do
+  nodes <- splice
+  as <- liftAjax ajaxAttrs
+  return $ map (mapAttrs $ addAttrs as) nodes
 
 ------------------------------------------------------------------------------
 -- Buttons
 ------------------------------------------------------------------------------
 
-toButton :: HeistT (Handler b b) (Attrs, Children) -> Splice (Handler b b)
-toButton = fmap $ pure . uncurry (X.Element "button")
+ajaxButton :: HasAjax b => AjaxHandler b Attrs -> Splice (Handler b b)
+ajaxButton = flip withAction $ runElem "button" []
 
-button :: HasAjax b => Handler b b JStat -> Splice (Handler b b)
-button h = toButton $ elemWithHandler h
+button :: HasAjax b => AjaxCallback b -> Splice (Handler b b)
+button h = ajaxButton $ onClick $ callHandler h
 
 readButton :: (HasAjax b, Read a) =>
-              JExpr -> ButtonHandler b a -> Splice (Handler b b)
-readButton j h = toButton $ readElem j h
+              JExpr -> ButtonCallback b a -> Splice (Handler b b)
+readButton j h = ajaxButton $ onClick $ callWithRead j h
 
 jsonButton :: (HasAjax b, FromJSON a) =>
-              JExpr -> ButtonHandler b a -> Splice (Handler b b)
-jsonButton j h = toButton $ jsonElem j h
+              JExpr -> ButtonCallback b a -> Splice (Handler b b)
+jsonButton j h = ajaxButton $ onClick $ callWithJson j h
 
 ------------------------------------------------------------------------------
 -- Anchors
 ------------------------------------------------------------------------------
 
-toAnchor :: HeistT (Handler b b) (Attrs, Children) -> Splice (Handler b b)
-toAnchor = fmap $ \(as,cs) -> [X.Element "a" (addAttrs [("href", "javascript://")] as) cs]
+ajaxAnchor :: HasAjax b => AjaxHandler b Attrs -> Splice (Handler b b)
+ajaxAnchor = flip withAction $ runElem "a" [("href", "javascript://")]
 
-anchor :: HasAjax b => Handler b b JStat -> Splice (Handler b b)
-anchor h = toAnchor $ elemWithHandler h
+anchor :: HasAjax b => AjaxCallback b -> Splice (Handler b b)
+anchor h = ajaxAnchor $ onClick $ callHandler h
 
 readAnchor :: (HasAjax b, Read a) =>
-              JExpr -> ButtonHandler b a -> Splice (Handler b b)
-readAnchor j h = toAnchor $ readElem j h
+              JExpr -> ButtonCallback b a -> Splice (Handler b b)
+readAnchor j h = ajaxAnchor $ onClick $ callWithRead j h
 
 jsonAnchor :: (HasAjax b, FromJSON a) =>
-              JExpr -> ButtonHandler b a -> Splice (Handler b b)
-jsonAnchor j h = toAnchor $ jsonElem j h
+              JExpr -> ButtonCallback b a -> Splice (Handler b b)
+jsonAnchor j h = ajaxAnchor $ onClick $ callWithJson j h
+
+------------------------------------------------------------------------------
+-- Inputs
+------------------------------------------------------------------------------
+
+callChecked :: HasAjax b => (Bool -> AjaxCallback b) -> AjaxHandler b JStat
+callChecked = callWithRead [jmacroE|this.checked?"True":"False"|] . maybe pass
+
+checkbox :: HasAjax b => (Bool -> AjaxCallback b) -> Splice (Handler b b)
+checkbox h = (withAction $ onClick $ callChecked h) freshCheckbox
+    where
+      freshCheckbox = runElem "input" [("type", "checkbox")]
