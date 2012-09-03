@@ -5,12 +5,11 @@ import           Control.Applicative
 import           Control.Concurrent.STM
 import           Control.Monad.State
 import           Data.ByteString             (ByteString)
-import qualified Data.ByteString.Char8       as B
 import           Data.Lens.Lazy
 import           Data.Map                    (Map)
 import           Data.Maybe
 import           Data.Text                   (Text)
-import qualified Data.Text                   as T
+import qualified Data.Text.Encoding          as E
 import           Data.Time.Clock.POSIX
 import           Snap.Core
 import           Snap.Snaplet
@@ -41,13 +40,13 @@ class HasAjax b where
 ------------------------------------------------------------------------------
 
 cidAsText :: CallbackId -> Text
-cidAsText (CallbackId c) = T.pack $ B.unpack c
+cidAsText (CallbackId c) = E.decodeUtf8 c
 
 getRqParam :: ByteString -> Handler b v (Maybe ByteString)
 getRqParam p = liftM (>>=listToMaybe) $ getsRequest $ rqParam p
 
 getTextRqParam :: Text -> Handler b v (Maybe ByteString)
-getTextRqParam = getRqParam . B.pack . T.unpack
+getTextRqParam = getRqParam . E.encodeUtf8
 
 getPageId :: AjaxHandler b PageId
 getPageId = do
@@ -62,10 +61,10 @@ newRandomId :: AjaxHandler b Text
 newRandomId = gets ajaxRNG >>= liftIO . mkCSRFToken
 
 newPageId :: AjaxHandler b PageId
-newPageId = PageId . B.pack . T.unpack <$> newRandomId
+newPageId = PageId . E.encodeUtf8 <$> newRandomId
 
 newCallbackId :: AjaxHandler b CallbackId
-newCallbackId = CallbackId . B.pack . T.unpack <$> newRandomId
+newCallbackId = CallbackId . E.encodeUtf8 <$> newRandomId
 
 getAjaxTVar :: (Ajax b -> TVar a) -> AjaxHandler b a
 getAjaxTVar a = gets a >>= liftIO . readTVarIO
