@@ -36,7 +36,7 @@ defaultAjaxState = do
   rng        <- mkRNG
   return Ajax { ajaxHeartbeats   = heartbeats
               , ajaxCallbacks    = callbacks
-              , ajaxPageId       = PageId ""
+              , ajaxPageId       = Nothing
               , ajaxRNG          = rng
               , ajaxPageLifetime = 75*4           -- 5 minutes
               , ajaxGCDelay      = 75*4*1000*1000 -- 5 minutes
@@ -46,16 +46,14 @@ ajaxInit :: HasHeist b => IO (Ajax b) -> SnapletInit b (Ajax b)
 ajaxInit ajaxState = makeSnaplet "ajax" "" Nothing $ do
                        addSplices splices
                        addRoutes routes
-                       wrapSite (setNewPageId >>)
                        ajax <- liftIO ajaxState
-                       gcThread <- liftIO $ forkIO $ collector ajax
-                       onUnload $ killThread gcThread
+                       gc <- liftIO $ forkIO $ collector ajax
+                       onUnload $ killThread gc
                        return ajax
 
 routes :: HasHeist b => [(ByteString, AjaxHandler b ())]
 routes = [ ("/request/:pageId/", handleRequest)
          , ("/gc",               ifLocal handleGC)
-         , ("/state",            ifLocal handleState)
          ]
     where
       ifLocal m = do
@@ -69,7 +67,7 @@ splices = [ ("ajaxFooter", footerSplice) ]
 
 footerSplice :: SnapletSplice b (Ajax b)
 footerSplice = do
-  PageId pid  <- liftHandler $ gets ajaxPageId
+  PageId pid  <- liftHandler getPageId
   ajaxUrl <- liftHandler getSnapletRootURL
   let initGC = [jmacro| jQuery(document).ready(function() {liftAjax.lift_successRegisterGC();});
                         var !lift_page = `(B.unpack pid)`;

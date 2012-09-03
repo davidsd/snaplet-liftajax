@@ -49,33 +49,31 @@ lazyFromStrict = LB.fromChunks . pure
 liftAjax :: HasAjax b => AjaxHandler b a -> HeistT (Handler b b) a
 liftAjax = lift . withTop ajaxLens
 
-addAjaxCallback :: HasAjax b => AjaxCallback b -> AjaxHandler b HandlerId
+addAjaxCallback :: HasAjax b => AjaxCallback b -> AjaxHandler b CallbackId
 addAjaxCallback = addCallback . (>>= Js.write)
 
 ------------------------------------------------------------------------------
 -- Ajax Calls
 ------------------------------------------------------------------------------
 
-ajaxCall :: JExpr -> JStat
-ajaxCall e = [jmacro| liftAjax.lift_ajaxHandler(`(e)`, null, null, 'javascript');
+sendData :: JExpr -> JStat
+sendData e = [jmacro| liftAjax.lift_ajaxHandler(`(e)`, null, null, 'javascript');
                       return false; |]
 
-encodeParams :: [(Text, JExpr)] -> JExpr
-encodeParams = collect . map pair
+callWithParams :: HasAjax b =>
+                  [(Text, JExpr)]
+               -> AjaxCallback b
+               -> AjaxHandler b JStat
+callWithParams jsParams c = do
+  callbackId <- addAjaxCallback c
+  return $ sendData $ encodeParams $ (cidAsText callbackId, Js.null) : jsParams
     where
+      encodeParams = collect . map pair
       pair (a,b) = [jmacroE|`(a)`+"="+encodeURIComponent(`(b)`)|]
       collect = foldl1Def Js.null (\x xs -> [jmacroE|`(x)`+"&"+`(xs)`|])
 
-callHandlerWithParams :: HasAjax b =>
-                         [(Text, JExpr)]
-                      -> AjaxCallback b
-                      -> AjaxHandler b JStat
-callHandlerWithParams jsParams h = do
-  handlerId <- addAjaxCallback h
-  return $ ajaxCall $ encodeParams $ (hidAsText handlerId, Js.null) : jsParams
-
-callHandler :: HasAjax b => AjaxCallback b -> AjaxHandler b JStat
-callHandler = callHandlerWithParams []
+call :: HasAjax b => AjaxCallback b -> AjaxHandler b JStat
+call = callWithParams []
 
 callWithParser :: HasAjax b =>
                   (B.ByteString -> Maybe a)
@@ -84,7 +82,7 @@ callWithParser :: HasAjax b =>
                -> AjaxHandler b JStat
 callWithParser parse jsExpr process = do
   exprName <- newRandomId
-  callHandlerWithParams [(exprName, jsExpr)] $ do
+  callWithParams [(exprName, jsExpr)] $ do
                                         expr <- getTextRqParam exprName
                                         process $ expr >>= parse
 
@@ -106,20 +104,20 @@ callWithJson jsonExpr = callWithParser (decode . lazyFromStrict)
 ------------------------------------------------------------------------------
 
 formWithCallback :: HasAjax b => AjaxCallback b -> Splice (Handler b b)
-formWithCallback h = do
+formWithCallback c = do
   X.Element _ attrs cs <- getParamNode
   formId    <- liftAjax newRandomId
-  handlerId <- liftAjax $ addAjaxCallback h
+  callbackId <- liftAjax $ addAjaxCallback c
   children  <- runNodeList cs
   let hidden = X.Element "input" [ ("type", "hidden")
-                                 , ("name", hidAsText handlerId)
-                                 , ("id",   hidAsText handlerId)
+                                 , ("name", cidAsText callbackId)
+                                 , ("id",   cidAsText callbackId)
                                  ] []
       f = X.Element "form" (addAttrs [ ("action",   "javascript://")
                                      , ("onsubmit", Js.showAsText sendForm)
                                      , ("id",       formId)
                                      ] attrs) (children ++ [hidden])
-      sendForm = ajaxCall [jmacroE|$(`("#"<>formId)`).serialize()|]
+      sendForm = sendData [jmacroE|$(`("#"<>formId)`).serialize()|]
   return [f]
 
 form :: HasAjax b =>
@@ -162,9 +160,8 @@ withAction :: HasAjax b =>
            -> Splice (Handler b b)
            -> Splice (Handler b b)
 withAction ajaxAttrs splice = do
-  nodes <- splice
   as <- liftAjax ajaxAttrs
-  return $ map (mapAttrs $ addAttrs as) nodes
+  map (mapAttrs $ addAttrs as) <$> splice
 
 ------------------------------------------------------------------------------
 -- Buttons
@@ -174,15 +171,15 @@ ajaxButton :: HasAjax b => AjaxHandler b Attrs -> Splice (Handler b b)
 ajaxButton = flip withAction $ runElem "button" []
 
 button :: HasAjax b => AjaxCallback b -> Splice (Handler b b)
-button h = ajaxButton $ onClick $ callHandler h
+button c = ajaxButton $ onClick $ call c
 
 readButton :: (HasAjax b, Read a) =>
               JExpr -> ButtonCallback b a -> Splice (Handler b b)
-readButton j h = ajaxButton $ onClick $ callWithRead j h
+readButton j c = ajaxButton $ onClick $ callWithRead j c
 
 jsonButton :: (HasAjax b, FromJSON a) =>
               JExpr -> ButtonCallback b a -> Splice (Handler b b)
-jsonButton j h = ajaxButton $ onClick $ callWithJson j h
+jsonButton j c = ajaxButton $ onClick $ callWithJson j c
 
 ------------------------------------------------------------------------------
 -- Anchors
@@ -192,15 +189,15 @@ ajaxAnchor :: HasAjax b => AjaxHandler b Attrs -> Splice (Handler b b)
 ajaxAnchor = flip withAction $ runElem "a" [("href", "javascript://")]
 
 anchor :: HasAjax b => AjaxCallback b -> Splice (Handler b b)
-anchor h = ajaxAnchor $ onClick $ callHandler h
+anchor c = ajaxAnchor $ onClick $ call c
 
 readAnchor :: (HasAjax b, Read a) =>
               JExpr -> ButtonCallback b a -> Splice (Handler b b)
-readAnchor j h = ajaxAnchor $ onClick $ callWithRead j h
+readAnchor j c = ajaxAnchor $ onClick $ callWithRead j c
 
 jsonAnchor :: (HasAjax b, FromJSON a) =>
               JExpr -> ButtonCallback b a -> Splice (Handler b b)
-jsonAnchor j h = ajaxAnchor $ onClick $ callWithJson j h
+jsonAnchor j c = ajaxAnchor $ onClick $ callWithJson j c
 
 ------------------------------------------------------------------------------
 -- Inputs
@@ -210,6 +207,7 @@ callChecked :: HasAjax b => (Bool -> AjaxCallback b) -> AjaxHandler b JStat
 callChecked = callWithRead [jmacroE|this.checked?"True":"False"|] . maybe pass
 
 checkbox :: HasAjax b => (Bool -> AjaxCallback b) -> Splice (Handler b b)
-checkbox h = (withAction $ onClick $ callChecked h) freshCheckbox
+checkbox c = (withAction $ onClick $ callChecked c) freshCheckbox
     where
       freshCheckbox = runElem "input" [("type", "checkbox")]
+

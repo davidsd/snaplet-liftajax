@@ -1,6 +1,7 @@
 module Snap.Snaplet.LiftAjax.State where
 
 ------------------------------------------------------------------------------
+import           Control.Applicative
 import           Control.Concurrent.STM
 import           Control.Monad.State
 import           Data.ByteString             (ByteString)
@@ -16,17 +17,17 @@ import           Snap.Snaplet
 import           Snap.Snaplet.Session.Common
 ------------------------------------------------------------------------------
 
-newtype PageId    = PageId ByteString    deriving (Eq, Ord, Read, Show)
-newtype HandlerId = HandlerId ByteString deriving (Eq, Ord, Read, Show)
+newtype PageId     = PageId ByteString    deriving (Eq, Ord, Read, Show)
+newtype CallbackId = CallbackId ByteString deriving (Eq, Ord, Read, Show)
 
-type PageCallbacks b = Map HandlerId (Handler b b ())
-type SiteCallbacks b = Map PageId    (PageCallbacks b)
+type PageCallbacks b = Map CallbackId (Handler b b ())
+type SiteCallbacks b = Map PageId     (PageCallbacks b)
 
 type Heartbeats = Map PageId POSIXTime
 
 data Ajax b = Ajax { ajaxHeartbeats   :: TVar Heartbeats
                    , ajaxCallbacks    :: TVar (SiteCallbacks b)
-                   , ajaxPageId       :: PageId
+                   , ajaxPageId       :: Maybe PageId
                    , ajaxRNG          :: RNG
                    , ajaxPageLifetime :: POSIXTime
                    , ajaxGCDelay      :: Int
@@ -39,8 +40,8 @@ class HasAjax b where
 
 ------------------------------------------------------------------------------
 
-hidAsText :: HandlerId -> Text
-hidAsText (HandlerId h) = T.pack $ B.unpack h
+cidAsText :: CallbackId -> Text
+cidAsText (CallbackId c) = T.pack $ B.unpack c
 
 getRqParam :: ByteString -> Handler b v (Maybe ByteString)
 getRqParam p = liftM (>>=listToMaybe) $ getsRequest $ rqParam p
@@ -48,17 +49,23 @@ getRqParam p = liftM (>>=listToMaybe) $ getsRequest $ rqParam p
 getTextRqParam :: Text -> Handler b v (Maybe ByteString)
 getTextRqParam = getRqParam . B.pack . T.unpack
 
+getPageId :: AjaxHandler b PageId
+getPageId = do
+  mPageId <- gets ajaxPageId
+  maybe genNewId return mPageId
+      where genNewId = newPageId >>= setPageId >> getPageId
+
 setPageId :: PageId -> AjaxHandler b ()
-setPageId pageId = modify $ \a -> a { ajaxPageId = pageId }
-
-setNewPageId :: AjaxHandler b ()
-setNewPageId = newRandomId >>= setPageId . PageId . B.pack . T.unpack
-
-newHandlerId :: AjaxHandler b HandlerId
-newHandlerId = fmap (HandlerId . B.pack . T.unpack) newRandomId
+setPageId pageId = modify $ \a -> a { ajaxPageId = Just pageId }
 
 newRandomId :: AjaxHandler b Text
 newRandomId = gets ajaxRNG >>= liftIO . mkCSRFToken
+
+newPageId :: AjaxHandler b PageId
+newPageId = PageId . B.pack . T.unpack <$> newRandomId
+
+newCallbackId :: AjaxHandler b CallbackId
+newCallbackId = CallbackId . B.pack . T.unpack <$> newRandomId
 
 getAjaxTVar :: (Ajax b -> TVar a) -> AjaxHandler b a
 getAjaxTVar a = gets a >>= liftIO . readTVarIO
